@@ -137,6 +137,7 @@ model Blog {
   title         String
   content       String
   image         String?
+  gifUrl        String?
   tags          String[]
   category      String?
   viewCount     Int      @default(0)

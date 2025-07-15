@@ -551,7 +551,7 @@ export const bookmarkPost = async (req, res) => {
 
 export const createBlog = async (req, res) => {
   try {
-    const { title, content, tags, category } = req.body;
+    const { title, content, tags, category, gifUrl } = req.body;
     const image = req.file;
     const userId = req.user.id;
 
@@ -563,8 +563,9 @@ export const createBlog = async (req, res) => {
     }
 
     let imageUrl = null;
+    let gifUrlToStore = null;
 
-    // Handle image upload
+    // Handle image upload or gifUrl (exclusive)
     if (image) {
       // Optimize image using Sharp
       const optimizedImageBuffer = await sharp(image.buffer)
@@ -583,6 +584,10 @@ export const createBlog = async (req, res) => {
       });
 
       imageUrl = cloudResponse.secure_url;
+      gifUrlToStore = null;
+    } else if (gifUrl) {
+      imageUrl = null;
+      gifUrlToStore = gifUrl;
     }
 
     // Get user info
@@ -597,6 +602,7 @@ export const createBlog = async (req, res) => {
         title,
         content,
         image: imageUrl,
+        gifUrl: gifUrlToStore,
         tags: tags ? tags.split(",").map((tag) => tag.trim()) : [],
         category,
         userId,
@@ -1721,7 +1727,9 @@ export const getTrendingContent = async (req, res) => {
         trendingContent = posts;
         total = postsCount;
       } else {
-        trendingContent.push(...posts.map(post => ({ ...post, type: 'post' })));
+        trendingContent.push(
+          ...posts.map((post) => ({ ...post, type: "post" }))
+        );
       }
     }
 
@@ -1775,7 +1783,9 @@ export const getTrendingContent = async (req, res) => {
         trendingContent = blogs;
         total = blogsCount;
       } else {
-        trendingContent.push(...blogs.map(blog => ({ ...blog, type: 'blog' })));
+        trendingContent.push(
+          ...blogs.map((blog) => ({ ...blog, type: "blog" }))
+        );
       }
     }
 
@@ -1904,8 +1914,8 @@ export const getDiscoveryContent = async (req, res) => {
 
     // Combine and shuffle content for discovery
     const discoveryContent = [
-      ...posts.map(post => ({ ...post, type: 'post' })),
-      ...blogs.map(blog => ({ ...blog, type: 'blog' }))
+      ...posts.map((post) => ({ ...post, type: "post" })),
+      ...blogs.map((blog) => ({ ...blog, type: "blog" })),
     ].sort(() => Math.random() - 0.5);
 
     const total = await Promise.all([
