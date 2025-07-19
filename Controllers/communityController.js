@@ -426,10 +426,25 @@ export const likePost = async (req, res) => {
         where: { id: existingLike.id },
       });
 
+      // Get updated likes count
+      const updatedLikes = await prisma.like.findMany({
+        where: { postId: id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              profilePicture: true,
+            },
+          },
+        },
+      });
+
       res.status(200).json({
         success: true,
         message: "Post unliked",
         liked: false,
+        likes: updatedLikes,
       });
     } else {
       // Like
@@ -450,7 +465,7 @@ export const likePost = async (req, res) => {
         await prisma.notification.create({
           data: {
             userId: post.userId,
-            type: "LIKE",
+            type: "like",
             fromUserId: userId,
             fromUsername: user.username,
             content: `${user.username} liked your post`,
@@ -461,7 +476,7 @@ export const likePost = async (req, res) => {
 
         // Emit real-time notification
         emitNotification(post.userId, {
-          type: "LIKE",
+          type: "like",
           fromUser: user,
           content: `${user.username} liked your post`,
           itemId: id,
@@ -469,10 +484,25 @@ export const likePost = async (req, res) => {
         });
       }
 
+      // Get updated likes count
+      const updatedLikes = await prisma.like.findMany({
+        where: { postId: id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              profilePicture: true,
+            },
+          },
+        },
+      });
+
       res.status(200).json({
         success: true,
         message: "Post liked",
         liked: true,
+        likes: updatedLikes,
       });
     }
   } catch (error) {
@@ -989,10 +1019,25 @@ export const likeBlog = async (req, res) => {
         where: { id: existingLike.id },
       });
 
+      // Get updated likes count
+      const updatedLikes = await prisma.like.findMany({
+        where: { blogId: id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              profilePicture: true,
+            },
+          },
+        },
+      });
+
       res.status(200).json({
         success: true,
         message: "Blog unliked",
         liked: false,
+        likes: updatedLikes,
       });
     } else {
       // Like
@@ -1013,7 +1058,7 @@ export const likeBlog = async (req, res) => {
         await prisma.notification.create({
           data: {
             userId: blog.userId,
-            type: "LIKE",
+            type: "like",
             fromUserId: userId,
             fromUsername: user.username,
             content: `${user.username} liked your blog`,
@@ -1024,7 +1069,7 @@ export const likeBlog = async (req, res) => {
 
         // Emit real-time notification
         emitNotification(blog.userId, {
-          type: "LIKE",
+          type: "like",
           fromUser: user,
           content: `${user.username} liked your blog`,
           itemId: id,
@@ -1032,10 +1077,25 @@ export const likeBlog = async (req, res) => {
         });
       }
 
+      // Get updated likes count
+      const updatedLikes = await prisma.like.findMany({
+        where: { blogId: id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              profilePicture: true,
+            },
+          },
+        },
+      });
+
       res.status(200).json({
         success: true,
         message: "Blog liked",
         liked: true,
+        likes: updatedLikes,
       });
     }
   } catch (error) {
@@ -1169,7 +1229,7 @@ export const addComment = async (req, res) => {
       await prisma.notification.create({
         data: {
           userId: target.userId,
-          type: "COMMENT",
+          type: "comment",
           fromUserId: userId,
           fromUsername: user.username,
           content: `${
@@ -1182,7 +1242,7 @@ export const addComment = async (req, res) => {
 
       // Emit real-time notification
       emitNotification(target.userId, {
-        type: "COMMENT",
+        type: "comment",
         fromUser: user,
         content: `${
           user.username
@@ -1359,7 +1419,7 @@ export const likeComment = async (req, res) => {
         await prisma.notification.create({
           data: {
             userId: comment.userId,
-            type: "LIKE",
+            type: "like",
             fromUserId: userId,
             fromUsername: user.username,
             content: `${user.username} liked your comment`,
@@ -1370,7 +1430,7 @@ export const likeComment = async (req, res) => {
 
         // Emit real-time notification
         emitNotification(comment.userId, {
-          type: "LIKE",
+          type: "like",
           fromUser: user,
           content: `${user.username} liked your comment`,
           itemId: id,
@@ -1420,7 +1480,6 @@ export const followUser = async (req, res) => {
       });
     }
 
-    // Check if already following
     const existingFollow = await prisma.follower.findFirst({
       where: {
         followerId: userId,
@@ -1433,11 +1492,21 @@ export const followUser = async (req, res) => {
       await prisma.follower.delete({
         where: { id: existingFollow.id },
       });
-
-      res.status(200).json({
+      // Get updated follower count
+      const updatedFollowerCount = await prisma.follower.count({
+        where: { followingId: id },
+      });
+      console.log("Sending follow response:", {
         success: true,
-        message: "User unfollowed",
         following: false,
+        message: "User unfollowed",
+        followerCount: updatedFollowerCount,
+      });
+      return res.status(200).json({
+        success: true,
+        following: false,
+        message: "User unfollowed",
+        followerCount: updatedFollowerCount,
       });
     } else {
       // Follow
@@ -1447,38 +1516,24 @@ export const followUser = async (req, res) => {
           followingId: id,
         },
       });
-
-      // Send notification
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { username: true, profilePicture: true },
+      // Get updated follower count
+      const updatedFollowerCount = await prisma.follower.count({
+        where: { followingId: id },
       });
-
-      await prisma.notification.create({
-        data: {
-          userId: id,
-          type: "FOLLOW",
-          fromUserId: userId,
-          fromUsername: user.username,
-          content: `${user.username} started following you`,
-        },
-      });
-
-      // Emit real-time notification
-      emitNotification(id, {
-        type: "FOLLOW",
-        fromUser: user,
-        content: `${user.username} started following you`,
-      });
-
-      res.status(200).json({
+      console.log("Sending follow response:", {
         success: true,
-        message: "User followed",
         following: true,
+        message: "User followed",
+        followerCount: updatedFollowerCount,
+      });
+      return res.status(200).json({
+        success: true,
+        following: true,
+        message: "User followed",
+        followerCount: updatedFollowerCount,
       });
     }
   } catch (error) {
-    console.error("Error following user:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error",

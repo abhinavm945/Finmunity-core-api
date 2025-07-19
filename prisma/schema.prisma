@@ -17,6 +17,7 @@ model User {
   passwordHash   String
   profilePicture String?
   bio            String?
+  gender         String?  // <-- ADD THIS LINE
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   
@@ -250,6 +251,7 @@ model Message {
   receiverId      String   @db.ObjectId
   content         String
   isRead          Boolean  @default(false)
+  status          MessageStatus @default(sent)
   createdAt       DateTime @default(now())
   
   // Relations
@@ -292,5 +294,11 @@ enum NotificationType {
 enum ItemType {
   post
   blog
+}
+
+enum MessageStatus {
+  sent
+  delivered
+  read
 }
 

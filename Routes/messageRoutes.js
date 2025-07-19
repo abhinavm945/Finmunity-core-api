@@ -7,6 +7,8 @@ import {
   startConversation,
   markMessageRead,
   getUnreadMessageCount,
+  markMessageDelivered,
+  getLastMessage,
 } from "../Controllers/messageController.js";
 
 const router = express.Router();
@@ -30,6 +32,12 @@ router.get("/conversations/:id/messages", getConversationMessages);
 router.post("/conversations/:id/messages", sendMessage);
 
 // Mark message as read
-router.put("/messages/:id/read", markMessageRead);
+router.put("/:id/read", markMessageRead);
+
+// Mark message as delivered
+router.put("/:id/delivered", markMessageDelivered);
+
+// Get last message in a conversation
+router.get("/conversations/:id/last-message", getLastMessage);
 
 export default router;

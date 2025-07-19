@@ -7,11 +7,12 @@ import {
   validateEmail,
   validatePassword,
   validateUsername,
-  validateImageUrl,
   createErrorResponse,
   createSuccessResponse,
 } from "../utils/helpers.js";
 import { prisma } from "../Database-connection/index.js";
+import sharp from "sharp";
+import cloudinary from "../utils/cloudinary.js";
 
 // User registration
 export const register = async (req, res) => {
@@ -270,6 +271,7 @@ export const getCurrentUser = async (req, res) => {
         email: true,
         profilePicture: true,
         bio: true,
+        gender: true,
         createdAt: true,
       },
     });
@@ -294,19 +296,29 @@ export const getCurrentUser = async (req, res) => {
 // Update profile
 export const updateProfile = async (req, res) => {
   try {
-    const { bio, profilePicture } = req.body;
+    const { bio, gender } = req.body;
     const userId = req.user.id;
+    let profilePictureUrl = req.body.profilePicture; // fallback if sent as URL
 
-    // Validation
-    if (profilePicture && !validateImageUrl(profilePicture)) {
-      return res
-        .status(400)
-        .json(
-          createErrorResponse(
-            "VALIDATION_ERROR",
-            "Please provide a valid image URL"
-          )
-        );
+    // If a file is uploaded, process and upload to Cloudinary
+    if (req.file) {
+      // Optimize image using Sharp
+      const optimizedImageBuffer = await sharp(req.file.buffer)
+        .resize(400, 400, { fit: "cover" })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+
+      // Convert to data URI
+      const fileUri = `data:image/jpeg;base64,${optimizedImageBuffer.toString(
+        "base64"
+      )}`;
+
+      // Upload to Cloudinary
+      const cloudResponse = await cloudinary.uploader.upload(fileUri, {
+        folder: "finmunity/profiles",
+      });
+
+      profilePictureUrl = cloudResponse.secure_url;
     }
 
     // Update user
@@ -314,7 +326,8 @@ export const updateProfile = async (req, res) => {
       where: { id: userId },
       data: {
         ...(bio !== undefined && { bio }),
-        ...(profilePicture !== undefined && { profilePicture }),
+        ...(gender !== undefined && { gender }),
+        ...(profilePictureUrl && { profilePicture: profilePictureUrl }),
       },
       select: {
         id: true,
@@ -322,6 +335,7 @@ export const updateProfile = async (req, res) => {
         email: true,
         profilePicture: true,
         bio: true,
+        gender: true,
         createdAt: true,
       },
     });

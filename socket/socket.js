@@ -76,4 +76,12 @@ export const emitNewMessage = (userId, message) => {
   }
 };
 
+// Helper function to emit message status update
+export const emitMessageStatusUpdate = (userId, messageId, status) => {
+  const socketId = onlineUsers.get(userId);
+  if (socketId) {
+    io.to(socketId).emit("messageStatusUpdate", { messageId, status });
+  }
+};
+
 export { app, server, io };

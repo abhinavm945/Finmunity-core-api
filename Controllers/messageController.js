@@ -4,6 +4,7 @@ import {
   createErrorResponse,
   createSuccessResponse,
 } from "../utils/helpers.js";
+import { emitNewMessage, emitMessageStatusUpdate } from "../socket/socket.js";
 
 const prisma = new PrismaClient();
 
@@ -62,22 +63,38 @@ export const getConversations = async (req, res) => {
     ]);
 
     // Format conversations to show other participant and last message
-    const formattedConversations = conversations.map((conversation) => {
-      const otherParticipant =
-        conversation.participant1Id === userId
-          ? conversation.participant2
-          : conversation.participant1;
+    const formattedConversations = await Promise.all(
+      conversations.map(async (conversation) => {
+        const otherParticipant =
+          conversation.participant1Id === userId
+            ? conversation.participant2
+            : conversation.participant1;
 
-      const lastMessage = conversation.messages[0] || null;
+        const participants = [
+          conversation.participant1,
+          conversation.participant2,
+        ];
+        const lastMessage = conversation.messages[0] || null;
 
-      return {
-        id: conversation.id,
-        otherParticipant,
-        lastMessage,
-        updatedAt: conversation.updatedAt,
-        unreadCount: 0, // You can implement this if needed
-      };
-    });
+        // Count unread messages for this conversation for the current user
+        const unreadCount = await prisma.message.count({
+          where: {
+            conversationId: conversation.id,
+            receiverId: userId,
+            isRead: false,
+          },
+        });
+
+        return {
+          id: conversation.id,
+          participants,
+          otherParticipant,
+          lastMessage,
+          updatedAt: conversation.updatedAt,
+          unreadCount,
+        };
+      })
+    );
 
     const pagination = createPagination(page, limit, total);
 
@@ -223,6 +240,7 @@ export const sendMessage = async (req, res) => {
         senderId: userId,
         receiverId,
         content: content.trim(),
+        status: "sent",
       },
       include: {
         sender: {
@@ -247,6 +265,10 @@ export const sendMessage = async (req, res) => {
       where: { id },
       data: { updatedAt: new Date() },
     });
+
+    // Emit newMessage to both receiver and sender
+    emitNewMessage(receiverId, message);
+    emitNewMessage(userId, message);
 
     res
       .status(201)
@@ -333,6 +355,7 @@ export const startConversation = async (req, res) => {
         senderId: userId,
         receiverId,
         content: content.trim(),
+        status: "sent",
       },
       include: {
         sender: {
@@ -358,6 +381,10 @@ export const startConversation = async (req, res) => {
       data: { updatedAt: new Date() },
     });
 
+    // Emit newMessage to both receiver and sender
+    emitNewMessage(receiverId, message);
+    emitNewMessage(userId, message);
+
     res.status(201).json(
       createSuccessResponse(
         {
@@ -382,6 +409,46 @@ export const startConversation = async (req, res) => {
   }
 };
 
+// Mark message as delivered
+export const markMessageDelivered = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const message = await prisma.message.findFirst({
+      where: { id, receiverId: userId },
+    });
+
+    if (!message) {
+      return res
+        .status(404)
+        .json(createErrorResponse("NOT_FOUND", "Message not found"));
+    }
+
+    const updated = await prisma.message.update({
+      where: { id },
+      data: { status: "delivered" },
+    });
+
+    // Emit status update to sender
+    emitMessageStatusUpdate(message.senderId, message.id, "delivered");
+
+    res
+      .status(200)
+      .json(createSuccessResponse({}, "Message marked as delivered"));
+  } catch (error) {
+    console.error("Mark message delivered error:", error);
+    res
+      .status(500)
+      .json(
+        createErrorResponse(
+          "INTERNAL_SERVER_ERROR",
+          "Error marking message as delivered"
+        )
+      );
+  }
+};
+
 // Mark message as read
 export const markMessageRead = async (req, res) => {
   try {
@@ -398,10 +465,13 @@ export const markMessageRead = async (req, res) => {
         .json(createErrorResponse("NOT_FOUND", "Message not found"));
     }
 
-    await prisma.message.update({
+    const updated = await prisma.message.update({
       where: { id },
-      data: { isRead: true },
+      data: { isRead: true, status: "read" },
     });
+
+    // Emit status update to sender
+    emitMessageStatusUpdate(message.senderId, message.id, "read");
 
     res.status(200).json(createSuccessResponse({}, "Message marked as read"));
   } catch (error) {
@@ -439,6 +509,42 @@ export const getUnreadMessageCount = async (req, res) => {
         createErrorResponse(
           "INTERNAL_SERVER_ERROR",
           "Error fetching unread message count"
+        )
+      );
+  }
+};
+
+// Get last message in a conversation
+export const getLastMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const message = await prisma.message.findFirst({
+      where: { conversationId: id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!message) {
+      return res
+        .status(404)
+        .json(
+          createErrorResponse(
+            "NOT_FOUND",
+            "No messages found for this conversation"
+          )
+        );
+    }
+    res
+      .status(200)
+      .json(
+        createSuccessResponse({ message }, "Last message fetched successfully")
+      );
+  } catch (error) {
+    console.error("Get last message error:", error);
+    res
+      .status(500)
+      .json(
+        createErrorResponse(
+          "INTERNAL_SERVER_ERROR",
+          "Error fetching last message"
         )
       );
   }

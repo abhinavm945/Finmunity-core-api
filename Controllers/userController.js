@@ -767,9 +767,15 @@ export const getSuggestedUsers = async (req, res) => {
       take: parseInt(limit),
     });
 
+    // Add follow status (should all be false for suggested users)
+    const suggestedUsersWithFollowStatus = suggestedUsers.map((user) => ({
+      ...user,
+      isFollowing: false,
+    }));
+
     res.status(200).json(
       createSuccessResponse({
-        users: suggestedUsers,
+        users: suggestedUsersWithFollowStatus,
       })
     );
   } catch (error) {
@@ -781,6 +787,79 @@ export const getSuggestedUsers = async (req, res) => {
           "INTERNAL_SERVER_ERROR",
           "Error fetching suggested users"
         )
+      );
+  }
+};
+
+// Search users by username or email
+export const searchUsers = async (req, res) => {
+  try {
+    const { query } = req.query;
+    const userId = req.user?.id;
+    if (!query || query.trim().length < 2) {
+      return res
+        .status(400)
+        .json(
+          createErrorResponse(
+            "VALIDATION_ERROR",
+            "Query must be at least 2 characters"
+          )
+        );
+    }
+    const users = await prisma.user.findMany({
+      where: {
+        AND: [
+          { id: { not: userId } },
+          {
+            OR: [{ username: { contains: query, mode: "insensitive" } }],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        username: true,
+        profilePicture: true,
+        bio: true,
+        _count: {
+          select: {
+            followers: true,
+            posts: true,
+            blogs: true,
+          },
+        },
+      },
+      take: 10,
+    });
+
+    // Add follow status for each user
+    const usersWithFollowStatus = await Promise.all(
+      users.map(async (user) => {
+        let isFollowing = false;
+        if (userId) {
+          const followRelation = await prisma.follower.findFirst({
+            where: {
+              followerId: userId,
+              followingId: user.id,
+            },
+          });
+          isFollowing = !!followRelation;
+        }
+        return {
+          ...user,
+          isFollowing,
+        };
+      })
+    );
+
+    res
+      .status(200)
+      .json(createSuccessResponse({ users: usersWithFollowStatus }));
+  } catch (error) {
+    console.error("Search users error:", error);
+    res
+      .status(500)
+      .json(
+        createErrorResponse("INTERNAL_SERVER_ERROR", "Error searching users")
       );
   }
 };

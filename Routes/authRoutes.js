@@ -10,6 +10,7 @@ import {
   forgotPassword,
   resetPassword,
 } from "../Controllers/authController.js";
+import upload from "../middleware/multer.js";
 
 const router = express.Router();
 
@@ -23,6 +24,11 @@ router.post("/reset-password", resetPassword);
 
 // Protected routes
 router.get("/me", authenticateToken, getCurrentUser);
-router.put("/profile", authenticateToken, updateProfile);
+router.put(
+  "/profile",
+  authenticateToken,
+  upload.single("profilePicture"),
+  updateProfile
+);
 
 export default router;
