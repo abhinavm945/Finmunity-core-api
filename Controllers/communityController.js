@@ -1,7 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import sharp from "sharp";
 import cloudinary from "../utils/cloudinary.js";
-import getDataUri from "../utils/datauri.js";
 import { emitNotification } from "../socket/socket.js";
 
 const prisma = new PrismaClient();
@@ -425,27 +424,6 @@ export const likePost = async (req, res) => {
       await prisma.like.delete({
         where: { id: existingLike.id },
       });
-
-      // Get updated likes count
-      const updatedLikes = await prisma.like.findMany({
-        where: { postId: id },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              profilePicture: true,
-            },
-          },
-        },
-      });
-
-      res.status(200).json({
-        success: true,
-        message: "Post unliked",
-        liked: false,
-        likes: updatedLikes,
-      });
     } else {
       // Like
       await prisma.like.create({
@@ -470,7 +448,7 @@ export const likePost = async (req, res) => {
             fromUsername: user.username,
             content: `${user.username} liked your post`,
             itemId: id,
-            itemType: "POST",
+            itemType: "post",
           },
         });
 
@@ -480,31 +458,44 @@ export const likePost = async (req, res) => {
           fromUser: user,
           content: `${user.username} liked your post`,
           itemId: id,
-          itemType: "POST",
+          itemType: "post",
         });
       }
+    }
 
-      // Get updated likes count
-      const updatedLikes = await prisma.like.findMany({
-        where: { postId: id },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              profilePicture: true,
-            },
+    // Get updated post with likes and comments
+    const updatedPost = await prisma.post.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            profilePicture: true,
           },
         },
-      });
+        comments: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                profilePicture: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        likes: true,
+      },
+    });
 
-      res.status(200).json({
-        success: true,
-        message: "Post liked",
-        liked: true,
-        likes: updatedLikes,
-      });
-    }
+    res.status(200).json({
+      success: true,
+      message: existingLike ? "Post unliked" : "Post liked",
+      liked: !existingLike,
+      post: updatedPost,
+    });
   } catch (error) {
     console.error("Error liking post:", error);
     res.status(500).json({
@@ -1018,27 +1009,6 @@ export const likeBlog = async (req, res) => {
       await prisma.like.delete({
         where: { id: existingLike.id },
       });
-
-      // Get updated likes count
-      const updatedLikes = await prisma.like.findMany({
-        where: { blogId: id },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              profilePicture: true,
-            },
-          },
-        },
-      });
-
-      res.status(200).json({
-        success: true,
-        message: "Blog unliked",
-        liked: false,
-        likes: updatedLikes,
-      });
     } else {
       // Like
       await prisma.like.create({
@@ -1047,7 +1017,6 @@ export const likeBlog = async (req, res) => {
           blogId: id,
         },
       });
-
       // Send notification if not liking own blog
       if (blog.userId !== userId) {
         const user = await prisma.user.findUnique({
@@ -1063,7 +1032,7 @@ export const likeBlog = async (req, res) => {
             fromUsername: user.username,
             content: `${user.username} liked your blog`,
             itemId: id,
-            itemType: "BLOG",
+            itemType: "blog",
           },
         });
 
@@ -1073,31 +1042,44 @@ export const likeBlog = async (req, res) => {
           fromUser: user,
           content: `${user.username} liked your blog`,
           itemId: id,
-          itemType: "BLOG",
+          itemType: "blog",
         });
       }
+    }
 
-      // Get updated likes count
-      const updatedLikes = await prisma.like.findMany({
-        where: { blogId: id },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              profilePicture: true,
-            },
+    // Get updated blog with likes and comments
+    const updatedBlog = await prisma.blog.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            profilePicture: true,
           },
         },
-      });
+        comments: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                profilePicture: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        likes: true,
+      },
+    });
 
-      res.status(200).json({
-        success: true,
-        message: "Blog liked",
-        liked: true,
-        likes: updatedLikes,
-      });
-    }
+    res.status(200).json({
+      success: true,
+      message: existingLike ? "Blog unliked" : "Blog liked",
+      liked: !existingLike,
+      blog: updatedBlog,
+    });
   } catch (error) {
     console.error("Error liking blog:", error);
     res.status(500).json({
@@ -1219,9 +1201,9 @@ export const addComment = async (req, res) => {
 
     // Send notification to post/blog owner
     const targetId = postId || blogId;
-    const targetType = postId ? "POST" : "BLOG";
+    const targetType = postId ? "post" : "blog";
 
-    const target = await prisma[targetType.toLowerCase()].findUnique({
+    const target = await prisma[targetType].findUnique({
       where: { id: targetId },
     });
 
@@ -1232,23 +1214,75 @@ export const addComment = async (req, res) => {
           type: "comment",
           fromUserId: userId,
           fromUsername: user.username,
-          content: `${
-            user.username
-          } commented on your ${targetType.toLowerCase()}`,
+          content: `${user.username} commented on your ${targetType}`,
           itemId: targetId,
           itemType: targetType,
         },
       });
-
-      // Emit real-time notification
       emitNotification(target.userId, {
         type: "comment",
         fromUser: user,
-        content: `${
-          user.username
-        } commented on your ${targetType.toLowerCase()}`,
+        content: `${user.username} commented on your ${targetType}`,
         itemId: targetId,
         itemType: targetType,
+      });
+    }
+
+    // Get updated blog and post if present
+    let updatedBlog = null;
+    let updatedPost = null;
+    if (blogId) {
+      updatedBlog = await prisma.blog.findUnique({
+        where: { id: blogId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              profilePicture: true,
+            },
+          },
+          comments: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  profilePicture: true,
+                },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          },
+          likes: true,
+        },
+      });
+    }
+    if (postId) {
+      updatedPost = await prisma.post.findUnique({
+        where: { id: postId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              profilePicture: true,
+            },
+          },
+          comments: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  profilePicture: true,
+                },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          },
+          likes: true,
+        },
       });
     }
 
@@ -1256,9 +1290,11 @@ export const addComment = async (req, res) => {
       success: true,
       message: "Comment added successfully",
       comment,
+      blog: updatedBlog,
+      post: updatedPost,
     });
-  } catch (error) {
-    console.error("Error adding comment:", error);
+  } catch (err) {
+    console.error("Error adding comment:", err);
     res.status(500).json({
       success: false,
       message: "Internal server error",
